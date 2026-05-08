@@ -30,3 +30,6 @@ assets/images/.gitkeep
 android/app/.cxx/
 
 FIREBASE_SETUP.md
+
+# Flutter generated
+android/app/src/main/java/io/flutter/plugins/
