@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "988925603140",
+    "firebase_url": "https://firecoord-2da06-default-rtdb.europe-west1.firebasedatabase.app",
+    "project_id": "firecoord-2da06",
+    "storage_bucket": "firecoord-2da06.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:988925603140:android:63b805a8f52c2f0d347b11",
+        "android_client_info": {
+          "package_name": "com.firecoord.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBdaHQtzyi097rtIH13EScBy17IWNMBLVk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
