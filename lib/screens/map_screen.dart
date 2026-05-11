@@ -4,6 +4,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import '../main.dart';
 import '../models/app_models.dart';
+import '../services/database_service.dart';
+import '../services/auth_service.dart';
 import '../utils/app_theme.dart';
 
 class MapScreen extends StatefulWidget {
@@ -16,19 +18,114 @@ class MapScreen extends StatefulWidget {
 class _MapScreenState extends State<MapScreen> {
   final _mapController = MapController();
   static const _center = LatLng(39.9208, 32.8700);
+  bool _addFireMode = false;
+
+  void _onMapTap(TapPosition tapPos, LatLng point) {
+    if (!_addFireMode) return;
+    setState(() => _addFireMode = false);
+    _showAddFireDialog(point);
+  }
+
+  void _showAddFireDialog(LatLng point) {
+    String selectedTerrain = 'forest';
+    showDialog(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: AppColors.border),
+          ),
+          title: const Row(children: [
+            Text('🔥 ', style: TextStyle(fontSize: 20)),
+            Text('Yangın Bildir', style: TextStyle(color: AppColors.textPrimary, fontSize: 16)),
+          ]),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '📍 ${point.latitude.toStringAsFixed(4)}, ${point.longitude.toStringAsFixed(4)}',
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              ),
+              const SizedBox(height: 16),
+              const Text('Arazi Tipi:', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8, runSpacing: 8,
+                children: [
+                  _terrainChip('🌲', 'Orman', 'forest', selectedTerrain, (v) => setS(() => selectedTerrain = v)),
+                  _terrainChip('🏙️', 'Kentsel', 'urban', selectedTerrain, (v) => setS(() => selectedTerrain = v)),
+                  _terrainChip('🌾', 'Tarla', 'field', selectedTerrain, (v) => setS(() => selectedTerrain = v)),
+                  _terrainChip('⛰️', 'Dağlık', 'mountain', selectedTerrain, (v) => setS(() => selectedTerrain = v)),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('İptal', style: TextStyle(color: AppColors.textMuted)),
+            ),
+            ElevatedButton.icon(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                await DatabaseService.addFire(point.latitude, point.longitude, selectedTerrain);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('Yangın bildirildi!'),
+                    backgroundColor: AppColors.primary,
+                    behavior: SnackBarBehavior.floating,
+                  ));
+                }
+              },
+              icon: const Icon(Icons.local_fire_department, size: 16),
+              label: const Text('Bildir'),
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _terrainChip(String icon, String label, String value, String selected, Function(String) onTap) {
+    final isSelected = value == selected;
+    return GestureDetector(
+      onTap: () => onTap(value),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary.withValues(alpha:0.2) : AppColors.border.withValues(alpha:0.3),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: isSelected ? AppColors.primary : AppColors.border),
+        ),
+        child: Text('$icon $label',
+            style: TextStyle(
+              color: isSelected ? AppColors.primary : AppColors.textMuted,
+              fontSize: 12,
+            )),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final user = AuthService.currentUser;
+    final canAddFire = user != null && (user.isMerkez || user.isSef);
+
     return Consumer<AppStateProvider>(
       builder: (_, provider, __) {
         return Stack(
           children: [
             FlutterMap(
               mapController: _mapController,
-              options: const MapOptions(
+              options: MapOptions(
                 initialCenter: _center,
                 initialZoom: 13,
-                backgroundColor: Color(0xFF1a1a2e),
+                backgroundColor: const Color(0xFF1a1a2e),
+                onTap: _onMapTap,
               ),
               children: [
                 TileLayer(
@@ -41,8 +138,8 @@ class _MapScreenState extends State<MapScreen> {
                     point: LatLng(fire.lat, fire.lng),
                     radius: fire.radius,
                     useRadiusInMeter: true,
-                    color: Colors.red.withOpacity(0.2),
-                    borderColor: Colors.red.withOpacity(0.6),
+                    color: Colors.red.withValues(alpha:0.2),
+                    borderColor: Colors.red.withValues(alpha:0.6),
                     borderStrokeWidth: 1.5,
                   )).toList(),
                 ),
@@ -51,8 +148,7 @@ class _MapScreenState extends State<MapScreen> {
                     final color = statusColor(team.status);
                     return Marker(
                       point: LatLng(team.lat, team.lng),
-                      width: 36,
-                      height: 36,
+                      width: 36, height: 36,
                       child: _TeamMarker(team: team, color: color),
                     );
                   }).toList(),
@@ -60,36 +156,62 @@ class _MapScreenState extends State<MapScreen> {
                 MarkerLayer(
                   markers: provider.fires.map((fire) => Marker(
                     point: LatLng(fire.lat, fire.lng),
-                    width: 36,
-                    height: 36,
+                    width: 36, height: 36,
                     child: _FireMarker(fire: fire),
                   )).toList(),
                 ),
               ],
             ),
 
+            // Stats bar
             Positioned(
               top: 0, left: 0, right: 0,
               child: _buildStatsBar(provider),
             ),
 
+            // Add fire mode banner
+            if (_addFireMode)
+              Positioned(
+                top: 48, left: 16, right: 16,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha:0.9),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(children: [
+                    const Text('🔥 Yangın konumuna tıklayın',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () => setState(() => _addFireMode = false),
+                      child: const Icon(Icons.close, color: Colors.white, size: 18),
+                    ),
+                  ]),
+                ),
+              ),
+
+            // Zoom controls + Add fire button
             Positioned(
               right: 12, bottom: 80,
               child: Column(children: [
-                _mapBtn(Icons.add, () => _mapController.move(
-                  _mapController.camera.center,
-                  _mapController.camera.zoom + 1,
-                )),
+                if (canAddFire) ...[
+                  _mapBtn(
+                    Icons.add_alert,
+                    () => setState(() => _addFireMode = !_addFireMode),
+                    color: _addFireMode ? AppColors.primary : null,
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                _mapBtn(Icons.add, () => _mapController.move(_mapController.camera.center, _mapController.camera.zoom + 1)),
                 const SizedBox(height: 8),
-                _mapBtn(Icons.remove, () => _mapController.move(
-                  _mapController.camera.center,
-                  _mapController.camera.zoom - 1,
-                )),
+                _mapBtn(Icons.remove, () => _mapController.move(_mapController.camera.center, _mapController.camera.zoom - 1)),
                 const SizedBox(height: 8),
                 _mapBtn(Icons.my_location, () => _mapController.move(_center, 13)),
               ]),
             ),
 
+            // Legend
             Positioned(
               bottom: 12, left: 12,
               child: _buildLegend(),
@@ -104,7 +226,7 @@ class _MapScreenState extends State<MapScreen> {
     final available = provider.teams.where((t) => t.status == 'available').length;
     final onDuty = provider.teams.where((t) => t.status == 'on_duty').length;
     return Container(
-      color: AppColors.surface.withOpacity(0.95),
+      color: AppColors.surface.withValues(alpha:0.95),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -129,7 +251,7 @@ class _MapScreenState extends State<MapScreen> {
   Widget _buildLegend() => Container(
     padding: const EdgeInsets.all(10),
     decoration: BoxDecoration(
-      color: AppColors.surface.withOpacity(0.92),
+      color: AppColors.surface.withValues(alpha:0.92),
       borderRadius: BorderRadius.circular(8),
       border: Border.all(color: AppColors.border),
     ),
@@ -139,7 +261,7 @@ class _MapScreenState extends State<MapScreen> {
         _legendRow('🔥', 'Yangın', Colors.red),
         _legendRow('🚒', 'Uygun Ekip', AppColors.success),
         _legendRow('🚒', 'Görevde', AppColors.warning),
-        _legendRow('⭕', 'Yayılma Alanı', Colors.red.withOpacity(0.5)),
+        _legendRow('⭕', 'Yayılma Alanı', Colors.red.withValues(alpha:0.5)),
       ],
     ),
   );
@@ -153,16 +275,16 @@ class _MapScreenState extends State<MapScreen> {
     ]),
   );
 
-  Widget _mapBtn(IconData icon, VoidCallback onTap) => GestureDetector(
+  Widget _mapBtn(IconData icon, VoidCallback onTap, {Color? color}) => GestureDetector(
     onTap: onTap,
     child: Container(
       width: 38, height: 38,
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: color != null ? color.withValues(alpha:0.15) : AppColors.surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: color ?? AppColors.border),
       ),
-      child: Icon(icon, color: AppColors.textPrimary, size: 18),
+      child: Icon(icon, color: color ?? AppColors.textPrimary, size: 18),
     ),
   );
 }
@@ -189,7 +311,7 @@ class _FireMarkerState extends State<_FireMarker> {
           Container(
             width: 36, height: 36,
             decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.15),
+              color: AppColors.primary.withValues(alpha:0.15),
               shape: BoxShape.circle,
               border: Border.all(color: AppColors.primary, width: 1.5),
             ),
@@ -249,7 +371,7 @@ class _TeamMarkerState extends State<_TeamMarker> {
           Container(
             width: 34, height: 34,
             decoration: BoxDecoration(
-              color: widget.color.withOpacity(0.15),
+              color: widget.color.withValues(alpha:0.15),
               shape: BoxShape.circle,
               border: Border.all(color: widget.color, width: 1.5),
             ),
