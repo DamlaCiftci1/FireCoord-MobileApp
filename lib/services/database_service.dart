@@ -99,14 +99,29 @@ class DatabaseService {
   }
 
   static Future<void> addFire(double lat, double lng, String terrain) async {
-    final ref = _db.child('fires').push();
-    await ref.set({
+    // Mevcut yangın sayısına göre sıralı ID oluştur (F003, F004...)
+    final snap = await _db.child('fires').once();
+    int count = 1;
+    if (snap.snapshot.value != null) {
+      final raw = Map<Object?, Object?>.from(snap.snapshot.value as Map);
+      // F001, F002... formatındaki ID'lerin max numarasını bul
+      for (final key in raw.keys) {
+        final k = key.toString();
+        if (k.startsWith('F')) {
+          final n = int.tryParse(k.substring(1)) ?? 0;
+          if (n >= count) count = n + 1;
+        }
+      }
+    }
+    final fireId = 'F${count.toString().padLeft(3, '0')}';
+    final terrainLabel = {'forest': 'Orman', 'urban': 'Kentsel', 'field': 'Tarla', 'mountain': 'Dağlık'}[terrain] ?? terrain;
+    await _db.child('fires/$fireId').set({
       'lat': lat, 'lng': lng, 'radius': 100,
       'direction': 'N', 'intensity': 'low', 'terrain': terrain,
       'startTime': DateTime.now().millisecondsSinceEpoch,
       'status': 'active', 'reportedBy': 'Mobil Uygulama', 'spreadRate': 8,
     });
-    await addNotification('Yeni yangın bildirimi: ${terrain} bölge', 'warning');
+    await addNotification('Yeni yangın bildirimi: $fireId - $terrainLabel bölge', 'warning');
   }
 
   static Future<void> updateFireRadius(String fireId, double radius) async {
