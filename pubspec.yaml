@@ -33,8 +33,24 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/FC_ICON.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#0A0E1A"
+  adaptive_icon_foreground: "assets/FC_ICON.png"
+
+
 
 flutter:
   uses-material-design: true
   assets:
+    - assets/
     - assets/images/
+
+
+
+
